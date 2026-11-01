@@ -232,7 +232,9 @@ def collect_overlay(overlay_dir: Path):
         if not p.is_file():
             continue
         rel = p.relative_to(root).as_posix()
-        executable = rel.endswith(".sh") or "/init.d/" in "/" + rel
+        name = Path(rel).name
+        executable = (rel.endswith(".sh") or "/init.d/" in "/" + rel
+                      or ".so" in name)
         members.append(("./" + rel, p.read_bytes(), 0o755 if executable else 0o644))
     return members
 
@@ -327,7 +329,9 @@ def cmd_build(args):
         if status == "patched":
             applied += 1
 
-    extra = collect_overlay(args.overlay) if args.overlay else []
+    extra = []
+    for d in (args.overlay or []):
+        extra += collect_overlay(d)
 
     args.out.mkdir(parents=True, exist_ok=True)
     so_path = args.out / Path(member).name
@@ -358,9 +362,10 @@ def main(argv=None):
     b.add_argument("--profile", default="offline",
                    choices=["offline", "selfhosted"])
     b.add_argument("--out", type=Path, default=here / "out")
-    b.add_argument("--overlay", type=Path,
-                   help="directory of extra files to add to KoboRoot.tgz "
-                        "(e.g. overlay/ for the SSH hardening)")
+    b.add_argument("--overlay", type=Path, nargs="+", metavar="DIR",
+                   help="one or more directories of extra files to add to "
+                        "KoboRoot.tgz (e.g. overlay/ for SSH, out/libs/overlay "
+                        "for the updated libraries)")
     b.add_argument("--only", nargs="+", metavar="GROUP",
                    help="only these patch groups")
     b.add_argument("--skip", nargs="+", metavar="GROUP",

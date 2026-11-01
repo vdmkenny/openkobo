@@ -47,14 +47,16 @@ Requires Python 3.11+ (standard library only).
 # resolve patch sites, print offsets and current prologue bytes
 python3 -I tools/openkobo.py inspect --zip kobo-update-4.38.23852.zip
 
-# offline profile, with the SSH hardening overlay
+# offline profile, with the SSH hardening and updated-library overlays
 python3 -I tools/openkobo.py build --zip kobo-update-4.38.23852.zip \
-        --profile offline --overlay overlay/ --out out/
+        --profile offline --overlay overlay/ out/libs/overlay --out out/
 ```
 
 Refuses to patch unless the library SHA-1 matches a `[[target.verified]]` entry
 (override with `--force`). `--only`/`--skip` select patch groups by name.
-`--overlay DIR` adds extra files (e.g. the SSH hardening) to the package.
+`--overlay` takes one or more directories whose files are added to the package;
+`overlay/` is the SSH hardening and `out/libs/overlay` is produced by the
+library build (see below).
 
 Output differs from the stock library only at the 12 patch sites (38 bytes);
 each stub is confirmed with `objdump`.
@@ -75,9 +77,11 @@ public key. Build with `--overlay overlay/`. Setup: `docs/ssh.md`.
 
 ## Component and kernel status
 
-`docs/modernization.md`. Summary: the media/parsing libraries (zlib, FreeType,
-libpng, libjpeg, libxml2) are the easiest and highest-value updates. OpenSSL,
-Qt and the kernel are ABI-locked to closed or vendor code and are hard.
+`docs/modernization.md`. The media/parsing libraries (zlib, FreeType, libpng,
+libjpeg, libxml2) are the easiest and highest-value updates and are built by
+`tools/libs/run.sh` (Docker): it cross-compiles them for the device's old glibc
+and writes `out/libs/overlay`, which the build above adds with `--overlay`.
+OpenSSL, Qt and the kernel are ABI-locked to closed or vendor code and are hard.
 
 ## Ghidra
 
@@ -104,7 +108,9 @@ docs/                    ssh.md, modernization.md
 
 ## Roadmap
 
-- Update the media/parsing libraries (`docs/modernization.md`).
+- Media/parsing libraries: built (zlib 1.3.1, libpng 1.6.44, libjpeg-turbo
+  3.0.4, FreeType 2.13.3, libxml2 2.13.5) via `tools/libs/`; not yet tested on a
+  device.
 - Library scanning: skip hidden folders (`ExcludeSyncFolders`).
 - Support the 4.46 bundles (Clara BW/Colour, Libra Colour).
 - selfhosted profile: sync against a custom `api_endpoint` without a Kobo account.

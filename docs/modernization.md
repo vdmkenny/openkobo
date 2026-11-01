@@ -32,6 +32,29 @@ against glibc 2.11, replace the file, confirm `nickel` still loads and renders.
 OpenSSL cannot be updated in place: closed binaries are linked to soname
 `.1.0.0`, and 1.1/3.x are a different ABI.
 
+### Building the updated libraries
+
+`tools/libs/run.sh` (Docker) builds the koxtoolchain, cross-compiles the five
+libraries, and fails if any result needs a newer glibc than the device has or
+gains an unresolvable dependency. Output:
+
+- `out/libs/lib/` — the built shared objects.
+- `out/libs/overlay/` — the same objects named by soname at their device paths
+  (`lib/`, `usr/lib/`), ready for `--overlay`.
+
+Current versions and measured glibc floor:
+
+| Library | Version | soname | glibc floor |
+|---------|---------|--------|-------------|
+| zlib | 1.3.1 | `libz.so.1` | 2.4 |
+| libpng | 1.6.44 | `libpng16.so.16` | 2.4 |
+| libjpeg-turbo | 3.0.4 | `libjpeg.so.62` | 2.7 |
+| FreeType | 2.13.3 | `libfreetype.so.6` | 2.4 |
+| libxml2 | 2.13.5 | `libxml2.so.2` | 2.7 |
+
+FreeType and libxml2 are built with optional dependencies disabled so their
+`NEEDED` list stays within what the stock libraries linked.
+
 ## Kernel
 
 Nia is i.MX6ULL, kernel 4.1.15 (NXP BSP plus Netronix/NTX board patches).
