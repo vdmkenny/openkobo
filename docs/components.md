@@ -6,10 +6,10 @@ names do not match the version inside.
 | Component | Stock | openkobo |
 |-----------|-------|----------|
 | glibc | 2.19 (file `libc-2.11.1.so`) | stock |
-| zlib | 1.2.8 (file `libz.so.1.2.4`) | 1.3.1 |
+| zlib | 1.2.8 (reports `1.2.8-motley`; file `libz.so.1.2.4`) | 1.3.1 |
 | libpng | 1.6.x (`libpng16.so.16` → `libpng.so`, base image) | 1.6.44 |
 | libjpeg-turbo | 1.5.2 | 3.0.4 |
-| FreeType | 2.4.4 (file `libfreetype.so.6.6.2`) | 2.13.3 |
+| FreeType | 2.5.0 (file `libfreetype.so.6.6.2`) | 2.13.3 |
 | libxml2 | 2.7.6 | 2.13.5 |
 | OpenSSH `sshd` | 8.9p1, static | stock, new config |
 | BusyBox | 1.31.1 | stock |

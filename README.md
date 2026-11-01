@@ -90,7 +90,7 @@ Off by default. Setup: `docs/ssh.md`.
 | zlib | 1.2.8 | 1.3.1 |
 | libpng | 1.6.x | 1.6.44 |
 | libjpeg-turbo | 1.5.2 | 3.0.4 |
-| FreeType | 2.4.4 | 2.13.3 |
+| FreeType | 2.5.0 | 2.13.3 |
 | libxml2 | 2.7.6 | 2.13.5 |
 
 Built by `tools/libs/` in Docker against the device's glibc. Compatibility
