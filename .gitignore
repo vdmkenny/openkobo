@@ -1,0 +1,9 @@
+# Kobo firmware and anything derived from it stays local: it is not ours to publish.
+firmware/
+ghidra/
+analysis/
+out/
+*.zip
+*.tgz
+
+.DS_Store

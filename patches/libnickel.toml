@@ -1,0 +1,180 @@
+# Binary patches for /usr/local/Kobo/libnickel.so.1.0.0.
+#
+# Patches are keyed by exported (mangled) C++ symbol, not by offset, so the same
+# file applies to every hardware bundle and to later firmware builds as long as
+# the symbol still exists. tools/openkobo.py resolves each symbol from the ELF
+# dynamic symbol table, checks that it points at a Thumb function prologue, and
+# writes a stub at the function entry.
+#
+# Stub kinds (Thumb-2):
+#   return_void          bx lr
+#   return_false         movs r0, #0 ; bx lr
+#   return_true          movs r0, #1 ; bx lr
+#   tailcall:<symbol>    b.w <symbol>   (same arguments, r0 = this)
+#
+# Only use return_* on functions that return void or bool/int in r0. Never on
+# functions that return a Qt value type (QString, QUrl, ...): those return
+# through a hidden pointer and need the object constructed.
+#
+# "profiles" lists the build profiles a patch is enabled in by default.
+# Addresses in comments are file offsets in 4.38.23852 (Ghidra shows +0x10000).
+
+[target]
+path = "usr/local/Kobo/libnickel.so.1.0.0"
+
+# Builds whose patch sites were checked by hand in Ghidra.
+[[target.verified]]
+version = "4.38.23852"
+sha1 = "f41a9da25309160da7cb49bc7db6a9e4cf79aeab"
+
+# --- telemetry -------------------------------------------------------------
+
+[[patch]]
+id = "no-analytics-events"
+group = "telemetry"
+profiles = ["offline", "selfhosted"]
+symbol = "_ZN11EventEngine18fireAnalyticsEventERK6DeviceRK7QStringRK4QMapIS3_8QVariantEb"
+stub = "return_void"
+why = """
+Single entry point for Kobo's own analytics events (0x7b9190). Events created
+with mandatory=true skip every privacy check (analyticsEnabled and the Reading
+Life toggle are only consulted when mandatory is false), so the in-UI privacy
+settings cannot stop them. Returning here means no event is ever built,
+queued or written to the AnalyticsEvents table.
+"""
+
+[[patch]]
+id = "no-analytics-upload"
+group = "telemetry"
+profiles = ["offline", "selfhosted"]
+symbol = "_ZN28SubmitAnalyticsEventsCommand13populateQueueEv"
+stub = "return_void"
+why = """
+Sync command that uploads stored AnalyticsEvents in batches of 25 and appends
+crash logs via retrieveCrashLogs(), whose result is used regardless of
+PrivacyPermissionsManager::crashLoggingEnabled (0x894660). The stock code
+returns early when there is nothing to send, so returning at entry follows the
+same "empty" path and leaves the sync state machine intact. Also stops events
+recorded before the patch from leaving the device.
+"""
+
+[[patch]]
+id = "no-google-analytics-queue"
+group = "telemetry"
+profiles = ["offline", "selfhosted"]
+symbol = "_ZN24GoogleAnalyticsRequester10addToQueueERK4QUrl"
+stub = "return_void"
+why = """
+Google Analytics (UA-6177406-38 and GA4 G-HKVPYM8786, ssl.google-analytics.com)
+hits are queued here and persisted to QSettings (up to 250 URLs) (0x8deb20).
+"""
+
+[[patch]]
+id = "no-google-analytics-send"
+group = "telemetry"
+profiles = ["offline", "selfhosted"]
+symbol = "_ZN24GoogleAnalyticsRequester11sendRequestERK4QUrl"
+stub = "return_void"
+why = "Network boundary for GA hits, covers anything already in the saved queue (0x8def7c)."
+
+[[patch]]
+id = "analytics-permission-off"
+group = "telemetry"
+profiles = ["offline", "selfhosted"]
+symbol = "_ZN25PrivacyPermissionsManager16analyticsEnabledERK4UserRK6Device"
+stub = "return_false"
+why = """
+Returns true whenever the account has no privacy settings URL, i.e. analytics
+is on by default (0x9e9ebc). Forced off for every remaining consumer.
+"""
+
+[[patch]]
+id = "crash-logging-permission-off"
+group = "telemetry"
+profiles = ["offline", "selfhosted"]
+symbol = "_ZN25PrivacyPermissionsManager19crashLoggingEnabledERK4UserRK6Device"
+stub = "return_false"
+why = "Crash-log upload permission (0x9ea194). hindenburg still writes local crash dumps."
+
+[[patch]]
+id = "ab-testing-off"
+group = "telemetry"
+profiles = ["offline", "selfhosted"]
+symbol = "_ZN25PrivacyPermissionsManager16abTestingEnabledERK4UserRK6Device"
+stub = "return_false"
+why = "Stops A/B test group ids being attached to events and requests (0x9ea014)."
+
+[[patch]]
+id = "recommendations-off"
+group = "telemetry"
+profiles = ["offline", "selfhosted"]
+symbol = "_ZN25PrivacyPermissionsManager22recommendationsEnabledERK4UserRK6Device"
+stub = "return_false"
+why = """
+Hides store recommendation widgets (end of book, book details, library, home)
+(0x9ea2ec). Fewer store requests and less to render.
+"""
+
+# --- third-party geo-IP lookup ------------------------------------------------
+
+[[patch]]
+id = "no-geoip-timezone"
+group = "geoip"
+profiles = ["offline", "selfhosted"]
+symbol = "_ZN17TimeZoneRetriever21getTimeZoneFromServerEv"
+stub = "tailcall:_ZN17TimeZoneRetriever4failEv"
+why = """
+During setup the device sends its IP to api.ipinfodb.com (hard-coded API key)
+and worldtimeapi.org to guess the time zone (0x9057f4). The only caller,
+ChooseSetupTypeController::doTimeZoneRequest, connects the retriever's signals
+before calling this, so emitting fail() straight away takes the same path as an
+unreachable server: the user picks the time zone by hand.
+"""
+
+# --- firmware updates -----------------------------------------------------------
+
+[[patch]]
+id = "no-ota-check"
+group = "ota"
+profiles = ["offline", "selfhosted"]
+symbol = "_ZN10SyncClient15addUpgradeCheckEbi"
+stub = "return_void"
+why = """
+Queues the UpgradeCheck/UpgradeCommand pair on sync, including in sideloaded
+mode (0x8c20a8). An over-the-air update would replace the patched firmware and
+re-enable everything above, so updates are applied by hand instead.
+"""
+
+# --- connectivity probes -------------------------------------------------------
+
+[[patch]]
+id = "no-captive-portal-probe"
+group = "captive"
+profiles = ["offline", "selfhosted"]
+symbol = "_ZN15FeatureSettings19ignoreCaptivePortalEv"
+stub = "return_true"
+why = """
+With IgnoreCaptivePortal set, HotspotTest::testUrl reports success without
+contacting captive.apple.com, api.ereaderupgrade.com or api.ereaderupgrades.com
+(0xa09b48). Time sync is unaffected (dhcpcd runs ntpd against pool.ntp.org).
+Cost: hotel/airport Wi-Fi login pages are no longer detected automatically.
+"""
+
+# --- accounts -----------------------------------------------------------------
+
+[[patch]]
+id = "sideloaded-mode"
+group = "accounts"
+profiles = ["offline"]
+symbol = "_ZN19ApplicationSettings14sideloadedModeEv"
+stub = "return_true"
+why = """
+Kobo's own account-less mode (0xa02058), read through this getter only. When
+it is on, ChooseSetupTypeController::isStepComplete treats the account step as
+done without a user, so setup never asks for a sign-in. It also removes the
+store, Kobo Plus and account UI, skips periodic auto-sync
+(PeriodicSyncScheduler::isSyncNeeded), disables Reading Life tracking, and
+turns off Dropbox, Google Drive and OverDrive. Dictionaries and the user guide
+still download from Kobo's fallback service. Not used in the selfhosted
+profile, which needs the normal sync path.
+"""
