@@ -178,3 +178,25 @@ turns off Dropbox, Google Drive and OverDrive. Dictionaries and the user guide
 still download from Kobo's fallback service. Not used in the selfhosted
 profile, which needs the normal sync path.
 """
+
+# --- library scan -------------------------------------------------------------
+
+[[patch]]
+id = "scan-skip-hidden-dirs"
+group = "scan"
+profiles = ["offline", "selfhosted"]
+symbol = "_ZN21SyncFileSystemCommand16findFilesToParseERK7QStringR11QStringList"
+find = "46f20912"     # movw r2, #0x6109
+replace = "46f20902"  # movw r2, #0x6009
+why = """
+The importer walks /mnt/onboard recursively (0x89fc52 inside findFilesToParse).
+It lists sub-directories with QDir filter 0x6109 = Dirs|NoSymLinks|
+NoDotAndDotDot|Hidden and recurses into each, so it descends into every hidden
+folder: .git, calibre's metadata, macOS .Spotlight-V100/.Trashes/.fseventsd,
+and so on. Clearing the Hidden bit (0x6109 -> 0x6009) stops it listing and
+recursing into hidden directories, which is faster and avoids importing junk.
+koboExtStorage (SD content) has no leading dot and is unaffected; .kobo was
+already excluded by the path regex, so skipping it as hidden changes nothing.
+The separate file listing still includes hidden files, which the parser then
+filters by extension.
+"""

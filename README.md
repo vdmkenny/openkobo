@@ -20,9 +20,10 @@ Firmware downloads: <https://pgaskin.net/KoboStuff/kobofirmware.html>
 
 ## Patches
 
-`patches/libnickel.toml` defines 12 patches to `libnickel.so.1.0.0`. Each is a
-Thumb-2 stub at a function entry (`bx lr`, return 0/1, or a tail call), keyed by
-exported symbol so it applies across bundles and later builds.
+`patches/libnickel.toml` defines 13 patches to `libnickel.so.1.0.0`, keyed by
+exported symbol so they apply across bundles and later builds. Most are a
+Thumb-2 stub at a function entry (`bx lr`, return 0/1, or a tail call); one is a
+byte replacement anchored inside a function (`find`/`replace`).
 
 | Group     | Effect |
 |-----------|--------|
@@ -31,6 +32,7 @@ exported symbol so it applies across bundles and later builds.
 | ota       | No firmware update check during sync |
 | captive   | No connectivity probe to `captive.apple.com` / Kobo hosts (NTP unaffected) |
 | accounts  | Sideloaded mode forced on — no account, no store (offline profile only) |
+| scan      | Importer skips hidden directories, so it no longer descends into `.git`, calibre metadata or macOS junk |
 
 ## Profiles
 
@@ -111,6 +113,5 @@ docs/                    ssh.md, modernization.md
 - Media/parsing libraries: built (zlib 1.3.1, libpng 1.6.44, libjpeg-turbo
   3.0.4, FreeType 2.13.3, libxml2 2.13.5) via `tools/libs/`; not yet tested on a
   device.
-- Library scanning: skip hidden folders (`ExcludeSyncFolders`).
 - Support the 4.46 bundles (Clara BW/Colour, Libra Colour).
 - selfhosted profile: sync against a custom `api_endpoint` without a Kobo account.

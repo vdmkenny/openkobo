@@ -187,6 +187,28 @@ def apply_patches(elf: Elf32, spec: dict, profile: str, only, skip):
         if not site.is_thumb:
             raise PatchError(f"{pid}: {patch['symbol']} is not a Thumb function")
 
+        # Byte replacement anchored inside a function: find a unique sequence in
+        # [symbol, symbol+size) and swap it for an equal-length one. Used for
+        # mid-function tweaks that a stub cannot express.
+        if "find" in patch:
+            find = bytes.fromhex(patch["find"])
+            repl = bytes.fromhex(patch["replace"])
+            if len(find) != len(repl):
+                raise PatchError(f"{pid}: find/replace length mismatch")
+            region = bytes(elf.data[site.file_off:site.file_off + site.size])
+            if region.count(repl) and not region.count(find):
+                rows.append((pid, group, "ok", "already patched"))
+                continue
+            n = region.count(find)
+            if n != 1:
+                raise PatchError(f"{pid}: pattern {patch['find']} found {n} times "
+                                 f"in {patch['symbol']} (need exactly 1)")
+            at = site.file_off + region.index(find)
+            elf.data[at:at + len(find)] = repl
+            rows.append((pid, group, "patched",
+                         f"@{at:#x} {patch['find']} -> {patch['replace']}"))
+            continue
+
         stub = build_stub(patch, elf, site)
         if site.size and site.size < len(stub):
             raise PatchError(f"{pid}: function too small for stub")
