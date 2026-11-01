@@ -1,54 +1,44 @@
-# SSH hardening
+# SSH
 
-The stock firmware has two SSH weaknesses:
+`overlay/` replaces `/etc/init.d/ssh` and `/etc/ssh/sshd_config`.
 
-- **Shared host keys.** Every Kobo ships the same `/etc/ssh/ssh_host_*` private
-  keys, so anyone who has them (they are in the public firmware) can
-  impersonate your device or sit in the middle of the connection.
-- **Empty-password root.** When SSH is enabled, `/etc/init.d/ssh` blanks the
-  root password and `sshd_config` sets `PermitRootLogin yes` /
-  `PermitEmptyPasswords yes`, so there is a window where root is reachable with
-  no password.
+| | Stock | openkobo |
+|-|-------|----------|
+| Host key | `/etc/ssh/ssh_host_*`, identical on every Kobo | one you generate for the device |
+| Root login | password blanked, empty password accepted | public key only |
+| Starts when | `.kobo/ssh-enabled` exists | that, plus a host key and an authorized key |
 
-The `overlay/` files replace both:
+## Enable
 
-- `overlay/etc/ssh/sshd_config` — key-only root login, passwords and empty
-  passwords refused.
-- `overlay/etc/init.d/ssh` — generates a device-unique host key on first
-  enable (kept on the user partition, so it survives firmware updates), and
-  refuses to start `sshd` until you have installed a public key, so root is
-  never reachable without a key.
-
-## Build it into a package
+On your computer:
 
 ```bash
-python3 -I tools/openkobo.py build --zip kobo-update-4.38.23852.zip \
-        --profile offline --overlay overlay/ --out out/
+ssh-keygen -t ed25519 -N "" -C kobo -f ssh_host_ed25519_key
 ```
 
-The overlay files are added to the same `KoboRoot.tgz` as the patched library.
-Install it the usual way: copy `out/KoboRoot.tgz` into the `.kobo` folder over
-USB, eject, reboot.
+On the eReader over USB:
 
-## Enable SSH on the device
+| Path | Content |
+|------|---------|
+| `.kobo/openkobo/ssh/ssh_host_ed25519_key` | the private key generated above |
+| `.kobo/openkobo/authorized_keys` | your public key, e.g. `~/.ssh/id_ed25519.pub` |
+| `.kobo/ssh-enabled` | empty |
 
-1. Over USB, create the folder `.kobo/openkobo/` on the eReader and copy your
-   **public** key (e.g. `~/.ssh/id_ed25519.pub`) to
-   `.kobo/openkobo/authorized_keys`.
-2. Create an empty file `.kobo/ssh-enabled`.
-3. Eject and reboot. Then:
+Eject, reboot, then `ssh root@<device_ip>`. To check the host key on first
+connect, add `<device_ip>` followed by the contents of
+`ssh_host_ed25519_key.pub` to `~/.ssh/known_hosts`.
 
-   ```bash
-   ssh root@<device_ip>
-   ```
+Disable: delete `.kobo/ssh-enabled` and reboot.
 
-The first boot generates the host key, so the very first connection may take a
-few extra seconds. If `authorized_keys` is missing or empty, `sshd` does not
-start — that is intentional.
+## Notes
 
-To disable SSH again, delete `.kobo/ssh-enabled` and reboot.
-
-> Host keys live at `.kobo/openkobo/ssh/` on the (FAT) user partition, so
-> someone with physical USB access could read them. That is a weaker threat
-> than keys shared across every device and reachable over the network; protect
-> the device physically if that matters to you.
+- The firmware has no `ssh-keygen`, so the host key is generated off-device.
+- Both keys live on the FAT user partition, readable by anyone with USB access.
+- At boot, `init.d/ssh` copies them to `/tmp/openkobo` (0700, files 0600):
+  sshd needs a 0600 host key, which FAT cannot store, and the partition is
+  unmounted while USB is connected.
+- `StrictModes` is off. The firmware update sets `/` to 0775 owned by uid
+  1000, which fails sshd's parent-directory check for any path.
+- Tested with the device's `sshd` (OpenSSH 8.9p1, static ARM) under emulation,
+  with `/` and `/tmp` set to the device's modes: key login works, password
+  login is refused, and sshd does not start without a host key.

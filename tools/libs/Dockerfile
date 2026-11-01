@@ -3,7 +3,7 @@
 # Stage 1 builds the koreader "koxtoolchain" for arm-kobo-linux-gnueabihf, whose
 # glibc is old enough for every supported Kobo (verified per-library in stage 2,
 # which fails the build if any library needs a newer glibc than the device has).
-# Stage 2 cross-builds the libraries into /opt/out/lib.
+# Stage 2 cross-builds the libraries into /home/builder/out.
 
 # ---- stage 1: toolchain -----------------------------------------------------
 FROM ubuntu:22.04 AS toolchain

@@ -6,8 +6,7 @@ libnickel.so.1.0.0 inside an official Kobo firmware update, and repacks a
 minimal KoboRoot.tgz that installs over the stock firmware.
 
 The device applies the result exactly like a stock update: rcS extracts
-.kobo/KoboRoot.tgz onto / with no signature check. Reverting is just
-reinstalling the official update zip for the device.
+.kobo/KoboRoot.tgz onto / with no signature check.
 
 Nothing from Kobo ships in this repository; you supply the official update.
 
@@ -15,9 +14,13 @@ Usage:
     python3 -I tools/openkobo.py build  --zip kobo-update-4.38.23852.zip \\
                                         --profile offline --out out/
     python3 -I tools/openkobo.py inspect --zip kobo-update-4.38.23852.zip
+    python3 -I tools/openkobo.py revert --zip kobo-update-4.38.23852.zip \\
+                                        --overlay overlay/ out/libs/overlay
 
 `inspect` resolves every patch symbol and prints its offset and current
 prologue bytes, which is how you port the patch set to a new firmware build.
+`revert` writes a KoboRoot.tgz that puts back the stock version of every path
+a build writes.
 
 Run with `-I` so the untrusted firmware directory can never inject a module.
 Standard library only (tomllib needs Python 3.11+).
@@ -227,13 +230,18 @@ def apply_patches(elf: Elf32, spec: dict, profile: str, only, skip):
 # Firmware container handling
 # ----------------------------------------------------------------------------
 
-def read_member(zip_path: Path, member: str):
-    """Return (bytes, TarInfo) for `member` inside the zip's KoboRoot.tgz."""
+def open_koboroot(zip_path: Path) -> tarfile.TarFile:
+    """Open the KoboRoot.tgz inside an official update zip."""
     with zipfile.ZipFile(zip_path) as zf:
         if "KoboRoot.tgz" not in zf.namelist():
             raise PatchError("KoboRoot.tgz not found in the update zip")
         blob = zf.read("KoboRoot.tgz")
-    with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tf:
+    return tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz")
+
+
+def read_member(zip_path: Path, member: str):
+    """Return (bytes, TarInfo) for `member` inside the zip's KoboRoot.tgz."""
+    with open_koboroot(zip_path) as tf:
         wanted = {member, "./" + member}
         ti = next((m for m in tf.getmembers() if m.name in wanted), None)
         if ti is None:
@@ -247,11 +255,12 @@ def collect_overlay(overlay_dir: Path):
     Scripts (under an init.d directory, or ending in .sh) get mode 0755;
     everything else 0644. Paths are mapped to ./<relative path> so they land
     at the matching absolute path when the device runs `tar zxf -C /`.
+    macOS Finder files (.DS_Store, ._*) are skipped.
     """
     members = []
     root = Path(overlay_dir)
     for p in sorted(root.rglob("*")):
-        if not p.is_file():
+        if not p.is_file() or p.name == ".DS_Store" or p.name.startswith("._"):
             continue
         rel = p.relative_to(root).as_posix()
         name = Path(rel).name
@@ -371,6 +380,53 @@ def cmd_build(args):
     return 0
 
 
+def cmd_revert(args):
+    """Write a KoboRoot.tgz holding the stock version of every path a build
+    with these overlays writes. The official update alone is not enough: it
+    has no entry for some soname links (e.g. lib/libz.so.1), which the base
+    image provides as symlinks and the library overlay replaces with files."""
+    spec = load_spec(args.patches)
+    paths = [spec["target"]["path"]]
+    for d in (args.overlay or []):
+        paths += [arc[2:] for arc, _blob, _mode in collect_overlay(d)]
+
+    args.out.mkdir(parents=True, exist_ok=True)
+    kr_path = args.out / "KoboRoot.tgz"
+    with open_koboroot(args.zip) as src:
+        stock = {m.name[2:] if m.name.startswith("./") else m.name: m
+                 for m in src.getmembers()}
+        mtime = stock[paths[0]].mtime
+        rows = []
+        with tarfile.open(kr_path, "w:gz") as tf:
+            for path in paths:
+                ti = stock.get(path)
+                if ti is not None:
+                    tf.addfile(ti, src.extractfile(ti) if ti.isfile() else None)
+                    rows.append(("stock", path, ti.linkname if ti.issym() else ""))
+                    continue
+                # A soname link the update does not ship: point it back at the
+                # one versioned file of that name it ships in the same dir.
+                parent, _, name = path.rpartition("/")
+                real = [p for p, m in stock.items() if m.isfile()
+                        and p.rpartition("/")[0] == parent
+                        and p.rpartition("/")[2].startswith(name + ".")]
+                if len(real) != 1:
+                    raise PatchError(f"{path}: no stock file to restore it from")
+                li = tarfile.TarInfo("./" + path)
+                li.type, li.linkname = tarfile.SYMTYPE, real[0].rpartition("/")[2]
+                li.mode, li.mtime = 0o777, mtime
+                li.uid = li.gid = 0
+                li.uname = li.gname = "root"
+                tf.addfile(li)
+                rows.append(("link", path, li.linkname))
+
+    for kind, path, target in rows:
+        print(f"  {kind:<5} {path}" + (f" -> {target}" if target else ""))
+    print(f"  {kr_path}")
+    print("\nInstall it like a build: copy KoboRoot.tgz into .kobo, eject, reboot.")
+    return 0
+
+
 def main(argv=None):
     here = Path(__file__).resolve().parent.parent
     ap = argparse.ArgumentParser(description="openkobo firmware patch tool")
@@ -399,6 +455,15 @@ def main(argv=None):
     i = sub.add_parser("inspect", help="resolve patch sites, patch nothing")
     i.add_argument("--zip", type=Path, required=True)
     i.set_defaults(func=cmd_inspect)
+
+    r = sub.add_parser("revert", help="write a KoboRoot.tgz that restores "
+                                      "the stock files a build replaces")
+    r.add_argument("--zip", type=Path, required=True,
+                   help="official update zip the installed build came from")
+    r.add_argument("--overlay", type=Path, nargs="+", metavar="DIR",
+                   help="overlays to undo (extra ones are harmless)")
+    r.add_argument("--out", type=Path, default=here / "out" / "revert")
+    r.set_defaults(func=cmd_revert)
 
     args = ap.parse_args(argv)
     try:

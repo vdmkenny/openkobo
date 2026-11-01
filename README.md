@@ -1,117 +1,122 @@
 # openkobo
 
-Patches for Kobo e-reader firmware that remove telemetry, remove the account
-requirement, and harden the system. Distributed as patches, not a fork: you
-supply the official update zip, the tooling patches it. No Kobo firmware is
-stored in this repository.
+Builds a `KoboRoot.tgz` from an official Kobo firmware update. Installed on
+the eReader, it:
+
+- disables Kobo analytics, crash-log upload, Google Analytics, the geo-IP
+  time-zone lookup, the captive-portal probe and OTA update checks;
+- removes the Kobo account requirement (sideloaded mode: no store, no sync);
+- makes the library import skip hidden directories;
+- replaces SSH with key-only root login and a per-device host key;
+- replaces zlib, libpng, libjpeg-turbo, FreeType and libxml2 with current
+  releases.
+
+No Kobo firmware is stored here. You supply the update zip.
 
 ## Supported
 
-| Firmware   | Bundles        | Devices |
-|------------|----------------|---------|
-| 4.38.23852 | kobo3–kobo11   | Touch, Glo, Aura, Clara HD, Forma, Libra H2O, Nia, Sage, Libra 2, Clara 2E, Elipsa, Elipsa 2E |
-| 4.46.23852 | kobo12, kobo13 | Clara BW, Clara Colour, Libra Colour — not yet supported |
+Firmware 4.38.23852, bundles kobo3–kobo11: Touch, Glo, Aura, Clara HD, Forma,
+Libra H2O, Nia, Sage, Libra 2, Clara 2E, Elipsa, Elipsa 2E. The device must
+already run 4.38.23852; the package holds only the files it changes.
 
-Patch sites verified on the kobo7 bundle; `libnickel.so.1.0.0` SHA-1
-`f41a9da25309160da7cb49bc7db6a9e4cf79aeab`. Tested on a Kobo Nia: both profiles
-install and run.
+Patch sites and library compatibility are checked on the kobo7 bundle
+(`libnickel.so.1.0.0` SHA-1 `f41a9da25309160da7cb49bc7db6a9e4cf79aeab`). The
+build refuses any other `libnickel` unless given `--force`.
 
-Firmware downloads: <https://pgaskin.net/KoboStuff/kobofirmware.html>
+The 4.46 bundles (kobo12, kobo13: Clara BW, Clara Colour, Libra Colour) are not
+supported.
 
-## Patches
-
-`patches/libnickel.toml` defines 13 patches to `libnickel.so.1.0.0`, keyed by
-exported symbol so they apply across bundles and later builds. Most are a
-Thumb-2 stub at a function entry (`bx lr`, return 0/1, or a tail call); one is a
-byte replacement anchored inside a function (`find`/`replace`).
-
-| Group     | Effect |
-|-----------|--------|
-| telemetry | No Kobo analytics events, no analytics/crash-log upload, no Google Analytics, analytics/crash/A-B/recommendation permissions forced off |
-| geoip     | Time-zone lookup to `api.ipinfodb.com` / `worldtimeapi.org` removed; time zone set manually |
-| ota       | No firmware update check during sync |
-| captive   | No connectivity probe to `captive.apple.com` / Kobo hosts (NTP unaffected) |
-| accounts  | Sideloaded mode forced on — no account, no store (offline profile only) |
-| scan      | Importer skips hidden directories, so it no longer descends into `.git`, calibre metadata or macOS junk |
-
-## Profiles
-
-- `offline` (default): all 12 patches, including forced sideloaded mode.
-- `selfhosted`: telemetry/geoip/ota/captive only, leaves the account and sync
-  path intact for a custom `[OneStoreServices] api_endpoint`. Not yet
-  implemented.
+Run on hardware (Kobo Nia): the libnickel patches. The SSH and library changes
+are verified off-device only (see `docs/`).
 
 ## Build
 
-Requires Python 3.11+ (standard library only).
+Requires Python 3.11+ and, for the libraries, Docker.
 
 ```bash
-# resolve patch sites, print offsets and current prologue bytes
-python3 -I tools/openkobo.py inspect --zip kobo-update-4.38.23852.zip
-
-# offline profile, with the SSH hardening and updated-library overlays
-python3 -I tools/openkobo.py build --zip kobo-update-4.38.23852.zip \
-        --profile offline --overlay overlay/ out/libs/overlay --out out/
+make ZIP=~/Downloads/kobo-update-4.38.23852.zip
 ```
 
-Refuses to patch unless the library SHA-1 matches a `[[target.verified]]` entry
-(override with `--force`). `--only`/`--skip` select patch groups by name.
-`--overlay` takes one or more directories whose files are added to the package;
-`overlay/` is the SSH hardening and `out/libs/overlay` is produced by the
-library build (see below).
+Output: `out/full/KoboRoot.tgz`. The first run builds the cross-toolchain,
+which is slow; later runs reuse it.
 
-Output differs from the stock library only at the 12 patch sites (38 bytes);
-each stub is confirmed with `objdump`.
+| Command | Result |
+|---------|--------|
+| `make` | full package: patches, SSH, libraries |
+| `make OVERLAYS=overlay` | patches and SSH, no libraries, no Docker |
+| `make PROFILE=selfhosted` | every patch except `accounts`; keeps the Kobo account and sync |
+| `make revert` | `out/revert/KoboRoot.tgz`, restores the stock files |
+| `make inspect` | resolves each patch symbol, prints offsets, patches nothing |
+| `make libs` | rebuilds the libraries only |
+| `make clean` | removes `out/full`, `out/revert` |
+
+`ZIP` defaults to the first `kobo-update-*.zip` in this directory.
 
 ## Install
 
-Copy `out/KoboRoot.tgz` into the `.kobo` folder over USB, eject, reboot.
-Revert by reinstalling the official update zip.
+Back up the `.kobo` folder. Copy `KoboRoot.tgz` into `.kobo/` on the eReader
+over USB and eject. The device installs it on the next boot.
 
-Back up `.kobo` first. To test patches without removing the account, build with
-`--skip accounts`.
+## Revert
 
-## SSH hardening
+Install `out/revert/KoboRoot.tgz` the same way. It restores the stock
+`libnickel`, SSH files and library links. Reinstalling the official update
+alone does not restore the library links.
 
-`overlay/` replaces the stock SSH config and init script: device-unique host
-keys, key-only root login, and `sshd` refuses to start without an installed
-public key. Build with `--overlay overlay/`. Setup: `docs/ssh.md`.
+## Patches
 
-## Component and kernel status
+`patches/libnickel.toml`: 13 patches to `libnickel.so.1.0.0`, keyed by exported
+symbol, each with its rationale. Most replace a function entry with a Thumb-2
+stub (`bx lr`, return 0/1, or a tail call); one replaces bytes inside a
+function. The patched library differs from stock in 39 bytes.
 
-`docs/modernization.md`. The media/parsing libraries (zlib, FreeType, libpng,
-libjpeg, libxml2) are the easiest and highest-value updates and are built by
-`tools/libs/run.sh` (Docker): it cross-compiles them for the device's old glibc
-and writes `out/libs/overlay`, which the build above adds with `--overlay`.
-OpenSSL, Qt and the kernel are ABI-locked to closed or vendor code and are hard.
+| Group | Effect |
+|-------|--------|
+| telemetry | No analytics events or upload, no crash-log upload, no Google Analytics; analytics, crash-log, A/B and recommendation permissions off |
+| geoip | No time-zone lookup via `api.ipinfodb.com` / `worldtimeapi.org`; time zone set by hand |
+| ota | No firmware update check |
+| captive | No connectivity probe to `captive.apple.com` / Kobo hosts; hotel-style login pages are not detected; NTP unaffected |
+| accounts | Sideloaded mode on: no account, store, Kobo Plus, Dropbox, Google Drive or OverDrive |
+| scan | Import skips hidden directories (`.git`, calibre metadata, macOS `.Spotlight-V100`, …) |
+
+## SSH
+
+Off by default. Setup: `docs/ssh.md`.
+
+## Libraries
+
+| Library | Stock | openkobo |
+|---------|-------|----------|
+| zlib | 1.2.8 | 1.3.1 |
+| libpng | 1.6.x | 1.6.44 |
+| libjpeg-turbo | 1.5.2 | 3.0.4 |
+| FreeType | 2.4.4 | 2.13.3 |
+| libxml2 | 2.7.6 | 2.13.5 |
+
+Built by `tools/libs/` in Docker against the device's glibc. Compatibility
+checks and other component versions: `docs/components.md`.
 
 ## Ghidra
 
-Headless project, kept out of git. Import `libnickel.so.1.0.0` from an extracted
-`KoboRoot.tgz` with `analyzeHeadless`, then query:
+Helpers for finding patch sites, using a local headless project (not in git).
+Ghidra loads `libnickel.so.1.0.0` at `0x10000`, so its addresses are the file
+offset plus `0x10000`.
 
 ```bash
-tools/gq.sh queries.txt out.txt
+GHIDRA=/path/to/ghidra tools/gq.sh queries.txt out.txt
 ```
 
 Commands, one per line: `decomp <addr>`, `callers <addr>`, `strref <text>`,
-`disasm <addr> <count>`. Set `GHIDRA` to the Ghidra install. Ghidra loads the
-library at `0x10000`; its addresses are the file/objdump offset plus `0x10000`.
+`disasm <addr> <count>`.
 
 ## Layout
 
 ```
-patches/libnickel.toml   patch definitions
-overlay/                 files added to KoboRoot.tgz (SSH hardening)
-tools/openkobo.py        build tool
-tools/gq.sh, ghidra_scripts/   Ghidra query helpers
-docs/                    ssh.md, modernization.md
+Makefile                  build entry point
+patches/libnickel.toml    patch definitions
+overlay/                  SSH files added to the package
+tools/openkobo.py         patch, package and revert tool
+tools/libs/               library cross-build (Docker)
+tools/gq.sh, tools/ghidra_scripts/   Ghidra helpers
+docs/                     ssh.md, components.md
 ```
-
-## Roadmap
-
-- Media/parsing libraries: built (zlib 1.3.1, libpng 1.6.44, libjpeg-turbo
-  3.0.4, FreeType 2.13.3, libxml2 2.13.5) via `tools/libs/`; not yet tested on a
-  device.
-- Support the 4.46 bundles (Clara BW/Colour, Libra Colour).
-- selfhosted profile: sync against a custom `api_endpoint` without a Kobo account.

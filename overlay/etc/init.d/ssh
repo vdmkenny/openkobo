@@ -1,23 +1,24 @@
 #!/bin/sh
-# openkobo hardened replacement for /etc/init.d/ssh (called from rcS).
+# openkobo replacement for /etc/init.d/ssh (called from rcS).
 #
-# Fixes two weaknesses in the stock script:
-#   1. Every stock Kobo ships identical SSH host keys. Here each device
-#      generates its own on first enable and keeps them on the user
-#      partition, so they persist across firmware updates.
+# Differences from the stock script:
+#   1. Stock Kobos all ship the same SSH host keys. Here the host key is one
+#      you generate for this device (the firmware has no ssh-keygen) and keep
+#      on the user partition.
 #   2. The stock script blanks the root password and the stock sshd_config
 #      permits empty-password root login. Here login is key-only, and sshd
-#      refuses to start until a public key is installed, so root is never
-#      reachable without a key.
+#      does not start until a public key is installed.
 #
-# To enable: put your SSH public key at
-#   /mnt/onboard/.kobo/openkobo/authorized_keys
-# create /mnt/onboard/.kobo/ssh-enabled, reboot, then: ssh root@<device_ip>
+# To enable, over USB:
+#   .kobo/openkobo/ssh/ssh_host_ed25519_key   host private key for this device
+#   .kobo/openkobo/authorized_keys            your public key(s)
+#   .kobo/ssh-enabled                         empty file
+# then reboot and: ssh root@<device_ip>
 
 SSH_ENABLED_FILE=/mnt/onboard/.kobo/ssh-enabled
 SSH_DISABLED_FILE=/mnt/onboard/.kobo/ssh-disabled
 OK_DIR=/mnt/onboard/.kobo/openkobo
-KEY_DIR=${OK_DIR}/ssh
+HOST_KEY=${OK_DIR}/ssh/ssh_host_ed25519_key
 AUTH_KEYS=${OK_DIR}/authorized_keys
 RUN_DIR=/tmp/openkobo
 SSHD_CONFIG=/etc/ssh/sshd_config
@@ -26,6 +27,7 @@ if [ ! -e "${SSH_ENABLED_FILE}" ]; then
 	if [ ! -e "${SSH_DISABLED_FILE}" ]; then
 		{
 			echo "To enable ssh:"
+			echo "- Put a host key for this device at ${HOST_KEY}"
 			echo "- Put your SSH public key at ${AUTH_KEYS}"
 			echo "- Rename this file to ssh-enabled"
 			echo "- Reboot, then connect with: ssh root@<device_ip>"
@@ -35,10 +37,13 @@ if [ ! -e "${SSH_ENABLED_FILE}" ]; then
 	exit 0
 fi
 
-# Without a public key, key-based login is impossible and we never fall back
-# to passwords, so there is nothing to start.
+# Never fall back to the shared stock host keys or to passwords.
+if [ ! -s "${HOST_KEY}" ]; then
+	echo "NOT starting sshd: no host key at ${HOST_KEY}"
+	exit 0
+fi
 if [ ! -s "${AUTH_KEYS}" ]; then
-	echo "NOT starting sshd: install a public key at ${AUTH_KEYS} first"
+	echo "NOT starting sshd: no public key at ${AUTH_KEYS}"
 	exit 0
 fi
 
@@ -47,24 +52,15 @@ fi
 /bin/mount -t devpts none /dev/pts -o mode=0620 2>/dev/null
 grep -q '^sshd:' /etc/group 2>/dev/null || addgroup --gid 999 sshd 2>/dev/null
 
-# Device-unique host keys, generated once and kept on the user partition.
-mkdir -p "${KEY_DIR}"
-for t in ed25519 rsa; do
-	[ -s "${KEY_DIR}/ssh_host_${t}_key" ] || \
-		ssh-keygen -t "${t}" -N "" -f "${KEY_DIR}/ssh_host_${t}_key" >/dev/null 2>&1
-done
-
-# sshd requires 0600 host keys and a clean authorized_keys path, which the FAT
-# user partition cannot provide, so stage copies in tmpfs each boot.
+# sshd requires a 0600 host key, which the FAT user partition cannot provide,
+# and the partition is unmounted while USB is connected, so stage copies in
+# tmpfs each boot.
 rm -rf "${RUN_DIR}"
 mkdir -p "${RUN_DIR}/ssh"
 chmod 700 "${RUN_DIR}" "${RUN_DIR}/ssh"
-for t in ed25519 rsa; do
-	cp "${KEY_DIR}/ssh_host_${t}_key" "${RUN_DIR}/ssh/ssh_host_${t}_key"
-	chmod 600 "${RUN_DIR}/ssh/ssh_host_${t}_key"
-done
+cp "${HOST_KEY}" "${RUN_DIR}/ssh/ssh_host_ed25519_key"
 cp "${AUTH_KEYS}" "${RUN_DIR}/authorized_keys"
-chmod 600 "${RUN_DIR}/authorized_keys"
+chmod 600 "${RUN_DIR}/ssh/ssh_host_ed25519_key" "${RUN_DIR}/authorized_keys"
 
 echo "Starting sshd (key-only root login)"
 /usr/sbin/sshd -f "${SSHD_CONFIG}"

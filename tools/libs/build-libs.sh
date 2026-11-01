@@ -1,8 +1,8 @@
 #!/bin/sh
 # Cross-build the media/parsing libraries against the koxtoolchain and verify
 # that each one keeps the stock soname, gains no dependency the device lacks,
-# and needs no glibc newer than the device's 2.11.1. Runs inside the Docker
-# image (see Dockerfile). Output: /opt/out/lib.
+# and needs no glibc symbol version newer than the device has. Runs inside the Docker
+# image (see Dockerfile). Output: /home/builder/out.
 set -eu
 
 HOST=arm-kobo-linux-gnueabihf
@@ -14,8 +14,10 @@ export CC="$HOST-gcc" AR="$HOST-ar" RANLIB="$HOST-ranlib"
 export PKG_CONFIG_PATH="$STAGE/lib/pkgconfig"
 export CPPFLAGS="-I$STAGE/include" LDFLAGS="-L$STAGE/lib"
 
-# Device's glibc floor. A build that needs anything newer is rejected.
-MAX_GLIBC=2.11.1
+# Newest symbol version in the device's glibc. The file is named
+# libc-2.11.1.so but is glibc 2.19, whose newest version node is GLIBC_2.18.
+# A build that needs anything newer is rejected.
+MAX_GLIBC=2.18
 # Shared libraries that already exist on the device; a NEEDED outside this set
 # (plus the libraries we build here) would be unresolvable on the device.
 DEVICE_LIBS="libc.so.6 libm.so.6 libdl.so.2 librt.so.1 libpthread.so.0 libgcc_s.so.1 libstdc++.so.6 ld-linux-armhf.so.3"
@@ -72,7 +74,7 @@ cp -a "$STAGE"/lib/libz.so.* "$STAGE"/lib/libpng16.so.* "$STAGE"/lib/libjpeg.so.
 rm -f "$OUT"/lib/*.la
 
 echo "============================================================"
-echo "verification (glibc floor ${MAX_GLIBC}, device libs: ${DEVICE_LIBS})"
+echo "verification (glibc ceiling ${MAX_GLIBC}, device libs: ${DEVICE_LIBS})"
 echo "============================================================"
 fail=0
 newest_glibc() {
@@ -110,4 +112,6 @@ cp -L "$STAGE/lib/libpng16.so.16"   "$OUT/overlay/lib/libpng16.so.16"
 cp -L "$STAGE/lib/libjpeg.so.62"    "$OUT/overlay/lib/libjpeg.so.62"
 cp -L "$STAGE/lib/libfreetype.so.6" "$OUT/overlay/usr/lib/libfreetype.so.6"
 cp -L "$STAGE/lib/libxml2.so.2"     "$OUT/overlay/usr/lib/libxml2.so.2"
+# Debug info is never loaded at run time; it only costs rootfs space.
+"$HOST-strip" --strip-unneeded "$OUT"/overlay/lib/* "$OUT"/overlay/usr/lib/*
 echo "ALL OK"

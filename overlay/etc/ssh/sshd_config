@@ -1,14 +1,9 @@
-# openkobo hardened sshd_config.
-# Replaces the stock config, which allowed empty-password root login
-# (PermitRootLogin yes / PermitEmptyPasswords yes). Root login here is
-# key-only, and the host keys are the device-unique ones that
-# /etc/init.d/ssh stages in tmpfs at boot (never the keys shared by every
-# stock Kobo).
-
-Protocol 2
+# openkobo sshd_config. Replaces the stock config, which allowed
+# empty-password root login (PermitRootLogin yes / PermitEmptyPasswords yes).
+# Root login is key-only. The host key is the device's own, staged in tmpfs by
+# /etc/init.d/ssh at boot (never the keys shared by every stock Kobo).
 
 HostKey /tmp/openkobo/ssh/ssh_host_ed25519_key
-HostKey /tmp/openkobo/ssh/ssh_host_rsa_key
 
 PermitRootLogin prohibit-password
 PubkeyAuthentication yes
@@ -19,6 +14,12 @@ ChallengeResponseAuthentication no
 
 AuthorizedKeysFile /tmp/openkobo/authorized_keys
 AllowUsers root
+
+# StrictModes rejects authorized_keys unless every parent directory up to / is
+# root-owned and not group/world-writable. On a Kobo that never holds: the
+# firmware update sets / to 0775 owned by uid 1000, and /tmp is a 1777 tmpfs.
+# init.d/ssh stages the file 0600 in a 0700 root-only directory instead.
+StrictModes no
 
 AllowTcpForwarding no
 X11Forwarding no
