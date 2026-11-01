@@ -26,8 +26,8 @@ build refuses any other `libnickel` unless given `--force`.
 The 4.46 bundles (kobo12, kobo13: Clara BW, Clara Colour, Libra Colour) are not
 supported.
 
-Run on hardware (Kobo Nia): the libnickel patches. The SSH and library changes
-are verified off-device only (see `docs/`).
+Run on hardware (Kobo Nia): the full package. SSH login is verified off-device
+only (`docs/ssh.md`).
 
 ## Build
 
