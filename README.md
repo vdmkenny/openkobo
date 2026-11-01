@@ -5,9 +5,9 @@ set of patches against Kobo's own firmware rather than a fork of it. Nothing
 from Kobo's firmware is stored in this repository: you bring the official
 update zip, the tooling patches it.
 
-**Status: research.** The analysis is done, the patches are defined and the
-build tool produces a patched `KoboRoot.tgz`, but nothing has been tested on a
-device yet.
+**Status: working on a Kobo Nia.** All 12 patches, including forced
+sideloaded mode, are installed and running on a Nia with firmware 4.38.23852.
+Other devices on the same firmware should behave the same but are untested.
 
 ## Target
 
@@ -19,6 +19,10 @@ device yet.
 Firmware downloads per device: <https://pgaskin.net/KoboStuff/kobofirmware.html>.
 The patch sites were checked by hand on the kobo7 bundle (Nia, Clara HD,
 Forma, Libra H2O); `libnickel.so.1.0.0` SHA-1 `f41a9da25309160da7cb49bc7db6a9e4cf79aeab`.
+
+| Tested on | Firmware   | Result |
+|-----------|------------|--------|
+| Kobo Nia  | 4.38.23852 | Stage 1 (`--skip accounts`, 11 patches) and stage 2 (offline profile, all 12) both installed and working |
 
 ## What the stock firmware does that we want gone
 
@@ -106,7 +110,7 @@ with `objdump` to decode to the intended instruction.
 
 > Patching firmware can brick a device. Back up the `.kobo` folder first, and
 > try the telemetry/OTA groups (`--skip accounts`) before forcing sideloaded
-> mode. Untested on hardware so far.
+> mode. Tested on a Kobo Nia only.
 
 ## Outdated components (for the roadmap)
 
@@ -137,11 +141,11 @@ address) plus `0x10000`.
 
 ## Roadmap
 
-- Test on hardware (a Kobo Nia): telemetry/OTA/geo-IP/captive groups first,
-  then sideloaded mode after a factory reset.
-- selfhosted profile: work out what the device needs to sync against a custom
-  `api_endpoint` (calibre-web / Komga / BookLore) without a real Kobo account.
-- SSH: per-device host keys, key-only root login, SFTP.
+- SSH: per-device host keys, key-only root login, SFTP. Until then, leave SSH
+  off (don't create `.kobo/ssh-enabled`).
 - Library scanning: skip hidden folders (`ExcludeSyncFolders`) for faster
   imports.
 - Look at the 4.46 branch for the colour and Clara BW models.
+- Last: the selfhosted profile, i.e. what the device needs to sync against a
+  custom `api_endpoint` (calibre-web / Komga / BookLore) without a real Kobo
+  account.
