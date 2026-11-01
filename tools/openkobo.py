@@ -219,16 +219,45 @@ def read_member(zip_path: Path, member: str):
         return tf.extractfile(ti).read(), ti
 
 
-def write_koboroot(out_path: Path, data: bytes, template: tarfile.TarInfo):
-    """Write a KoboRoot.tgz holding only `data`, keeping the stock file's
-    name, mode, ownership and mtime so it installs like a stock update."""
-    ti = tarfile.TarInfo(template.name)
-    ti.size = len(data)
-    ti.mode, ti.mtime, ti.type = template.mode, template.mtime, tarfile.REGTYPE
-    ti.uid, ti.gid = template.uid, template.gid
-    ti.uname, ti.gname = template.uname, template.gname
+def collect_overlay(overlay_dir: Path):
+    """Return (arcname, bytes, mode) for every file under overlay_dir.
+
+    Scripts (under an init.d directory, or ending in .sh) get mode 0755;
+    everything else 0644. Paths are mapped to ./<relative path> so they land
+    at the matching absolute path when the device runs `tar zxf -C /`.
+    """
+    members = []
+    root = Path(overlay_dir)
+    for p in sorted(root.rglob("*")):
+        if not p.is_file():
+            continue
+        rel = p.relative_to(root).as_posix()
+        executable = rel.endswith(".sh") or "/init.d/" in "/" + rel
+        members.append(("./" + rel, p.read_bytes(), 0o755 if executable else 0o644))
+    return members
+
+
+def write_koboroot(out_path: Path, data: bytes, template: tarfile.TarInfo,
+                   extra=None):
+    """Write a KoboRoot.tgz with the patched library (keeping the stock file's
+    name, mode, ownership and mtime) plus any overlay files, so it installs
+    like a stock update."""
     with tarfile.open(out_path, "w:gz") as tf:
+        ti = tarfile.TarInfo(template.name)
+        ti.size = len(data)
+        ti.mode, ti.mtime, ti.type = template.mode, template.mtime, tarfile.REGTYPE
+        ti.uid, ti.gid = template.uid, template.gid
+        ti.uname, ti.gname = template.uname, template.gname
         tf.addfile(ti, io.BytesIO(data))
+        for arcname, blob, mode in (extra or []):
+            ei = tarfile.TarInfo(arcname)
+            ei.size = len(blob)
+            ei.mode = mode
+            ei.mtime = template.mtime
+            ei.type = tarfile.REGTYPE
+            ei.uid = ei.gid = 0
+            ei.uname = ei.gname = "root"
+            tf.addfile(ei, io.BytesIO(blob))
 
 
 # ----------------------------------------------------------------------------
@@ -298,13 +327,17 @@ def cmd_build(args):
         if status == "patched":
             applied += 1
 
+    extra = collect_overlay(args.overlay) if args.overlay else []
+
     args.out.mkdir(parents=True, exist_ok=True)
     so_path = args.out / Path(member).name
     so_path.write_bytes(elf.data)
     kr_path = args.out / "KoboRoot.tgz"
-    write_koboroot(kr_path, bytes(elf.data), template)
+    write_koboroot(kr_path, bytes(elf.data), template, extra)
 
     print(f"\n{applied} patch(es) applied")
+    for arcname, _blob, mode in extra:
+        print(f"  overlay {oct(mode)[2:]} {arcname}")
     print(f"  {so_path}")
     print(f"  {kr_path}")
     print("\nInstall: copy KoboRoot.tgz into the .kobo folder on the eReader "
@@ -325,6 +358,9 @@ def main(argv=None):
     b.add_argument("--profile", default="offline",
                    choices=["offline", "selfhosted"])
     b.add_argument("--out", type=Path, default=here / "out")
+    b.add_argument("--overlay", type=Path,
+                   help="directory of extra files to add to KoboRoot.tgz "
+                        "(e.g. overlay/ for the SSH hardening)")
     b.add_argument("--only", nargs="+", metavar="GROUP",
                    help="only these patch groups")
     b.add_argument("--skip", nargs="+", metavar="GROUP",

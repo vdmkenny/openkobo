@@ -141,8 +141,9 @@ address) plus `0x10000`.
 
 ## Roadmap
 
-- SSH: per-device host keys, key-only root login, SFTP. Until then, leave SSH
-  off (don't create `.kobo/ssh-enabled`).
+- SSH hardening: done, in `overlay/` (per-device host keys, key-only root
+  login, SFTP). Build with `--overlay overlay/`; see [docs/ssh.md](docs/ssh.md).
+  Not yet tested on a device.
 - Library scanning: skip hidden folders (`ExcludeSyncFolders`) for faster
   imports.
 - Look at the 4.46 branch for the colour and Clara BW models.

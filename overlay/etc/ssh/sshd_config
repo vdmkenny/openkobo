@@ -1,0 +1,31 @@
+# openkobo hardened sshd_config.
+# Replaces the stock config, which allowed empty-password root login
+# (PermitRootLogin yes / PermitEmptyPasswords yes). Root login here is
+# key-only, and the host keys are the device-unique ones that
+# /etc/init.d/ssh stages in tmpfs at boot (never the keys shared by every
+# stock Kobo).
+
+Protocol 2
+
+HostKey /tmp/openkobo/ssh/ssh_host_ed25519_key
+HostKey /tmp/openkobo/ssh/ssh_host_rsa_key
+
+PermitRootLogin prohibit-password
+PubkeyAuthentication yes
+PasswordAuthentication no
+PermitEmptyPasswords no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+
+AuthorizedKeysFile /tmp/openkobo/authorized_keys
+AllowUsers root
+
+AllowTcpForwarding no
+X11Forwarding no
+PermitTunnel no
+
+ClientAliveInterval 15
+ClientAliveCountMax 4
+Compression no
+
+Subsystem sftp internal-sftp
