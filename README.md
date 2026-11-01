@@ -48,6 +48,7 @@ which is slow; later runs reuse it.
 | `make revert` | `out/revert/KoboRoot.tgz`, restores the stock files |
 | `make inspect` | resolves each patch symbol, prints offsets, patches nothing |
 | `make libs` | rebuilds the libraries only |
+| `make bench` | times stock vs new libraries under ARM emulation; results in `docs/components.md` |
 | `make clean` | removes `out/full`, `out/revert` |
 
 `ZIP` defaults to the first `kobo-update-*.zip` in this directory.
@@ -117,6 +118,7 @@ patches/libnickel.toml    patch definitions
 overlay/                  SSH files added to the package
 tools/openkobo.py         patch, package and revert tool
 tools/libs/               library cross-build (Docker)
+tools/bench/              library benchmark (Docker, ARM emulation)
 tools/gq.sh, tools/ghidra_scripts/   Ghidra helpers
 docs/                     ssh.md, components.md
 ```

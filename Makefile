@@ -3,6 +3,7 @@
 #   make ZIP=~/Downloads/kobo-update-4.38.23852.zip   -> out/full/KoboRoot.tgz
 #   make revert ZIP=...                                -> out/revert/KoboRoot.tgz
 #   make OVERLAYS=overlay ZIP=...                      without the libraries
+#   make bench ZIP=...                                 stock vs new libraries
 #
 # ZIP defaults to the first kobo-update-*.zip in this directory.
 
@@ -13,13 +14,13 @@ OVERLAYS ?= overlay $(LIBS)
 ZIPFILE  := $(wildcard $(ZIP))
 PY       := python3 -I tools/openkobo.py
 
-ifneq ($(filter all image revert inspect,$(or $(MAKECMDGOALS),all)),)
+ifneq ($(filter all image revert inspect bench,$(or $(MAKECMDGOALS),all)),)
 ifeq ($(ZIPFILE),)
 $(error set ZIP=<official kobo-update-*.zip for your device>)
 endif
 endif
 
-.PHONY: all image revert inspect libs clean
+.PHONY: all image revert inspect libs bench clean
 
 all: image
 
@@ -42,5 +43,9 @@ $(LIBS)/lib/libz.so.1: tools/libs/Dockerfile tools/libs/build-libs.sh
 	sh tools/libs/run.sh
 	touch $@
 
+# A/B timing of stock vs new libraries under ARM emulation (tools/bench/run.sh).
+bench: $(LIBS)/lib/libz.so.1
+	sh tools/bench/run.sh "$(ZIPFILE)"
+
 clean:
-	rm -rf out/full out/revert
+	rm -rf out/full out/revert out/bench

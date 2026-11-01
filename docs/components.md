@@ -30,6 +30,28 @@ RMSDK, plugins): every symbol and symbol version they import is defined.
 FreeType and libxml2 are built with optional dependencies off, so their
 `NEEDED` lists match the stock libraries.
 
+## Performance
+
+`make bench ZIP=...` (`tools/bench/`) times each library, stock against new,
+under ARM emulation (Docker `linux/arm/v7`) on the firmware's own glibc.
+Emulation skews absolute times; compare the columns, not the numbers. Glyphs
+are rendered the way Qt 5 does it (`FT_Outline_Get_Bitmap`).
+
+| Workload | Stock | New | Change |
+|----------|-------|-----|--------|
+| Inflate a 655 KB XHTML chapter | 4.82 ms | 4.16 ms | −14% |
+| Inflate a Kobo font (Georgia, Qt-compressed) | 1.41 ms | 1.42 ms | same |
+| Decode a 1600×2400 JPEG cover | 92.7 ms | 72.6 ms | −22% |
+| Decode the cover at 1/4 scale | 33.8 ms | 28.4 ms | −16% |
+| Render 4000 glyphs, Georgia 10 pt at 212 dpi | 116.8 ms | 109.4 ms | −6% |
+| Render 4000 glyphs, OpenDyslexic (CFF) | 136.4 ms | 139.5 ms | same |
+| Parse the XHTML chapter | 25.3 ms | 24.3 ms | −4% |
+
+Median of three runs, each the best of five rounds. libpng is not compared:
+the update has no stock libpng 1.6 binary.
+
+## Reverting
+
 The official update has no entry for the soname links `lib/libz.so.1`,
 `lib/libjpeg.so.62`, `usr/lib/libfreetype.so.6` and `usr/lib/libxml2.so.2`; the
 base image provides them as symlinks. Reinstalling the official update
