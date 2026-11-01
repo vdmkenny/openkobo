@@ -5,8 +5,9 @@ set of patches against Kobo's own firmware rather than a fork of it. Nothing
 from Kobo's firmware is stored in this repository: you bring the official
 update zip, the tooling patches it.
 
-**Status: research.** The analysis is done and the binary patches are defined,
-but there is no build tool yet and nothing has been tested on a device.
+**Status: research.** The analysis is done, the patches are defined and the
+build tool produces a patched `KoboRoot.tgz`, but nothing has been tested on a
+device yet.
 
 ## Target
 
@@ -75,6 +76,38 @@ still exists. Every entry says why the stub is safe for its callers.
 | captive    | no connectivity probes (NTP via dhcpcd is unaffected) |
 | accounts   | sideloaded mode forced on (offline profile only) |
 
+## Building
+
+You supply the official update zip for your device (see the download table
+above). `tools/openkobo.py` needs only Python 3.11+ (standard library).
+
+```bash
+# resolve every patch site and print offsets + current prologue bytes
+python3 -I tools/openkobo.py inspect --zip kobo-update-4.38.23852.zip
+
+# apply the offline profile and repack
+python3 -I tools/openkobo.py build --zip kobo-update-4.38.23852.zip \
+        --profile offline --out out/
+```
+
+The tool refuses to patch unless the library's SHA-1 matches a
+`[[target.verified]]` build in `patches/libnickel.toml` (override with
+`--force` after reviewing `inspect` output on the new build). `--only`/`--skip`
+select patch groups; `--profile selfhosted` leaves sideloaded mode off.
+
+Output `out/KoboRoot.tgz` holds only the patched `libnickel.so.1.0.0`, with the
+stock file's mode and ownership preserved. **Install:** copy it into the
+`.kobo` folder on the eReader over USB, eject, and reboot. **Revert:** reinstall
+the official update zip for the device.
+
+On 4.38.23852 (offline profile) the result differs from the stock library in
+exactly the 12 patch sites (38 bytes) and nothing else; each stub was confirmed
+with `objdump` to decode to the intended instruction.
+
+> Patching firmware can brick a device. Back up the `.kobo` folder first, and
+> try the telemetry/OTA groups (`--skip accounts`) before forcing sideloaded
+> mode. Untested on hardware so far.
+
 ## Outdated components (for the roadmap)
 
 | Component | Version | Notes |
@@ -104,11 +137,10 @@ address) plus `0x10000`.
 
 ## Roadmap
 
-- Build tool: read an official update zip, apply the patches with symbol and
-  prologue checks, repack `KoboRoot.tgz` preserving ownership and modes, and
-  verify the result byte-for-byte outside the patch sites.
-- Profiles: offline (no account) and selfhosted (custom `api_endpoint`;
-  account bootstrap still to be worked out).
+- Test on hardware (a Kobo Nia): telemetry/OTA/geo-IP/captive groups first,
+  then sideloaded mode after a factory reset.
+- selfhosted profile: work out what the device needs to sync against a custom
+  `api_endpoint` (calibre-web / Komga / BookLore) without a real Kobo account.
 - SSH: per-device host keys, key-only root login, SFTP.
 - Library scanning: skip hidden folders (`ExcludeSyncFolders`) for faster
   imports.
